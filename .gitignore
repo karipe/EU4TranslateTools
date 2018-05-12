@@ -97,3 +97,17 @@ ENV/
 
 # mypy
 .mypy_cache/
+
+# pycharm
+.idea/*
+
+# toolkit inputs
+ingame_source.txt
+worldmap_source.txt
+*.bak
+*.bmfc
+*._bmfc
+*.dds
+*.tga
+*.fnt
+*.yml
