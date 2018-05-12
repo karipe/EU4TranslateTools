@@ -86,7 +86,7 @@ def extract_characters(name, text):
 
 def process_file(name):
     print('Processing ' + name + '...')
-    f = open('./original_yml/' + name + '.yml',"r", encoding='utf_8_sig')
+    f = open('./original_yml/' + name + '.yml', "r", encoding='utf_8_sig')
     text = f.read()
     f.close()
     extract_characters(name, text)
@@ -130,6 +130,39 @@ def generate_bmfont(name, ext, source_file):
     ]
 
     subprocess.call(' '.join(cmd_list))
+    f = open('./fonts/' + name + '.fnt', 'r', encoding='utf_8')
+    lines = f.readlines()
+    f.close()
+    f = open('./fonts/' + name + '.fnt', 'w', encoding='utf_8')
+
+    year_line = ''
+    day_line = ''
+    for line in lines:
+        line = line.strip()
+        if 'id=24180' in line or 'id=45380' in line:  # 년
+            year_line = line.replace('id=45380', 'id=15').replace('id=24180', 'id=15')
+        if 'id=26085' in line or 'id=51068' in line:  # 일
+            day_line = line.replace('id=51068', 'id=14').replace('id=26085', 'id=14')
+
+    write_mode = False
+    for line in lines:
+        line = line.strip()
+        if 'chars count=' in line:
+            write_mode = True
+            chars_count = int(line.split('=')[1])
+            if day_line:
+                chars_count += 1
+            if year_line:
+                chars_count += 1
+            line = 'chars count=' + str(chars_count)
+        f.write(line + '\n')
+        if write_mode:
+            if day_line:
+                f.write(day_line + '\n')
+            if year_line:
+                f.write(year_line + '\n')
+            write_mode = False
+    f.close()
 
 
 def get_bmfc_option(name, ext):
