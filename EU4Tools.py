@@ -68,6 +68,7 @@ def convert_wide_text_to_escaped_wide_text(wide_text):
 
     return result
 
+
 characters = set()
 worldmap_characters = set()
 
@@ -121,25 +122,135 @@ def escape_yml():
 
 
 def generate_bmfont(name, ext, source_file):
-    cmdList = [
+    cmd_list = [
         'bmfont64.exe',
         '-c',"./bmfc/" + name + ext,
         '-o',"./fonts/" + name + ".fnt",
         '-t',source_file
     ]
 
-    subprocess.call(' '.join(cmdList))
+    subprocess.call(' '.join(cmd_list))
 
+
+def get_bmfc_option(name, ext):
+    f = open('./bmfc/' + name + ext, 'r')
+    lines = f.readlines()
+
+    bmfc_option = {}
+
+    for line in lines:
+        line = line.strip()
+        if line and line[0] == '#':
+            continue
+        if '=' in line:
+            elems = line.split('=')
+            if len(elems) == 2:
+                if elems[1].isdigit():
+                    bmfc_option[elems[0]] = int(elems[1])
+                else:
+                    bmfc_option[elems[0]] = elems[1]
+    return bmfc_option
+
+
+def generate_dirs(position, width, height, unit):
+    tmp_result = [position - unit, position - width * unit, position + unit, position + width * unit]
+    result = []
+    for value in tmp_result:
+        if value >= 0 and value < width * height * unit:
+            result.append(value)
+    return result
+
+
+def outglow_bmfont(name, ext, bmfc_option):
+    print('Generating outglow.')
+    f = open('./fonts/' + name + ext, 'rb')
+    header = f.read(0x80)
+    body = f.read()
+    f.close()
+
+    width = bmfc_option['outWidth']
+    height = bmfc_option['outHeight']
+
+    if len(body) != width * height * 4:
+        print('The size of this DDS file is strange.')
+        return
+
+    generations = []
+    points = set()
+
+    for generation_number in range(0, 7):
+        generations.append(set())
+        current_generation = generations[-1]
+        if generation_number == 0:
+            for i in range(0, len(body), 4):
+                r = body[i]
+
+                if r == 255:  # Check not black position
+                    dirs = generate_dirs(i, width, height, 4)
+                    for p in dirs:
+                        if body[p] != 255:
+                            current_generation.add(i)
+                            points.add(i)
+                            break
+        if generation_number != 0:
+            for p in previous_generation:
+                dirs = generate_dirs(p, width, height, 4)
+                for i in dirs:
+                    a = body[i]
+                    if a == 255:
+                        if i in points:
+                            continue
+                        current_generation.add(i)
+                        points.add(i)
+        previous_generation = current_generation
+
+    result = bytearray(body)
+
+    for i in range(0, len(result), 4):
+        if result[i] == 255 and result[i + 3] != 0 and i not in points:
+            result[i + 3] = 0
+        if result[i] != 255:
+            result[i + 3] = 0xBF
+            if result[i] != 0:
+                result[i] = result[i] // 2
+                result[i + 1] = result[i + 1] // 2
+                result[i + 2] = result[i + 2] // 2
+
+    for generation_number, generation in enumerate(generations):
+        alpha = [0xA9, 0x7A, 0x64, 0x4F, 0x3B, 0x28, 0x12][generation_number]
+        for position in generation:
+            result[position] = 0x91
+            result[position + 1] = 0x91
+            result[position + 2] = 0x91
+            result[position + 3] = alpha
+
+    f = open('./fonts/' + name + ext, 'wb')
+    f.write(header)
+    f.write(result)
+    f.close()
+    print('Finished.')
 
 def generate_fonts():
-    files = os.listdir("./bmfc");
+    files = os.listdir("./bmfc")
     for file in files:
         file_name, file_ext = os.path.splitext(file);
         if file_ext == ".bmfc":
             generate_bmfont(file_name, file_ext, "ingame_source.txt");
         if file_ext == "._bmfc":
             generate_bmfont(file_name, file_ext, "worldmap_source.txt");
+            bmfc_option = get_bmfc_option(file_name, file_ext)
+            if bmfc_option['textureFormat'] != 'dds' or bmfc_option['textureCompression'] != 0:
+                print('Auto glow is only possible for uncompressed DDS.')
+                continue
+            if bmfc_option['invR'] != 1 or bmfc_option['invG'] != 1 or bmfc_option['invB'] != 1:
+                print('The Auto glow function requires that the invR, invG, and invB options are 1s.')
+                continue
 
+            fonts = os.listdir('./fonts')
+            for font in fonts:
+                font_name, font_ext = os.path.splitext(font)
+                if font_name == file_name and font_ext == '.dds':
+                    outglow_bmfont(font_name, font_ext, bmfc_option)
 
 if __name__ == "__main__":
     # execute only if run as a script
