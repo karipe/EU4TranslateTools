@@ -78,7 +78,7 @@ def extract_characters(name, text):
         if c == '\n':
             continue
         characters.add(c)
-        if name in ['countries_l_english', 'prov_names_l_english', 'area_regions_l_english',
+        if name in [None, 'countries_l_english', 'prov_names_l_english', 'area_regions_l_english',
                     'cultures_phase4_l_english', 'prov_names_adj_l_english', 'regions_phase4_l_english',
                     'tags_phase4_l_english']:
             worldmap_characters.add(c)
