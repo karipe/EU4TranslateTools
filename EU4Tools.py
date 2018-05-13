@@ -3,6 +3,7 @@
 import os
 import subprocess
 import sys
+import re
 
 cp_map = {
     0x80: 0x20AC,
@@ -144,6 +145,10 @@ def generate_bmfont(name, ext, source_file):
         if 'id=26085' in line or 'id=51068' in line:  # 일
             day_line = line.replace('id=51068', 'id=14').replace('id=26085', 'id=14')
 
+    bmfc_option = get_bmfc_option(name, ext)
+    yoffset_modifier = bmfc_option.get('yOffset', 0)
+    yoffset_re = re.compile('yoffset=([-0-9]*)')
+
     write_mode = False
     for line in lines:
         line = line.strip()
@@ -155,6 +160,12 @@ def generate_bmfont(name, ext, source_file):
             if year_line:
                 chars_count += 1
             line = 'chars count=' + str(chars_count)
+
+        m = yoffset_re.search(line)
+        if m:
+            original_offset = int(m.group(1))
+            line = line.replace('yoffset=' + str(original_offset), 'yoffset=' + str(original_offset - yoffset_modifier))
+
         f.write(line + '\n')
         if write_mode:
             if day_line:
@@ -166,7 +177,7 @@ def generate_bmfont(name, ext, source_file):
 
 
 def get_bmfc_option(name, ext):
-    f = open('./bmfc/' + name + ext, 'r')
+    f = open('./bmfc/' + name + ext, 'r', encoding='utf_8')
     lines = f.readlines()
 
     bmfc_option = {}
