@@ -104,6 +104,8 @@ ENV/
 # toolkit inputs
 ingame_source.txt
 worldmap_source.txt
+original.xlsx
+*.po
 *.bak
 *.bmfc
 *._bmfc
@@ -111,3 +113,8 @@ worldmap_source.txt
 *.tga
 *.fnt
 *.yml
+
+# etc
+et_xmlfile/*
+openpyxl/*
+jdcal.py
