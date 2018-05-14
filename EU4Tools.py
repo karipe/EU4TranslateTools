@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 
 import os
+import os.path
 import subprocess
 import sys
 import re
@@ -115,10 +116,10 @@ def escape_yml():
     f.close()
 
     f = open('./ingame_source.txt', 'w', encoding='utf_8_sig')
-    f.write(''.join(characters))
+    f.write(''.join(sorted(list(characters))))
     f.close()
     f = open('./worldmap_source.txt', 'w', encoding='utf_8_sig')
-    f.write(''.join(worldmap_characters))
+    f.write(''.join(sorted(list(worldmap_characters))))
     f.close()
 
 
@@ -164,7 +165,7 @@ def generate_bmfont(name, ext, source_file):
         m = yoffset_re.search(line)
         if m:
             original_offset = int(m.group(1))
-            line = line.replace('yoffset=' + str(original_offset), 'yoffset=' + str(original_offset - yoffset_modifier))
+            line = line.replace('yoffset=' + str(original_offset), 'yoffset=' + str(original_offset + yoffset_modifier))
 
         f.write(line + '\n')
         if write_mode:
@@ -175,6 +176,12 @@ def generate_bmfont(name, ext, source_file):
             write_mode = False
     f.close()
 
+def check_int(s):
+    if not s:
+        return False
+    if s[0] in ('-', '+'):
+        return s[1:].isdigit()
+    return s.isdigit()
 
 def get_bmfc_option(name, ext):
     f = open('./bmfc/' + name + ext, 'r', encoding='utf_8')
@@ -189,7 +196,7 @@ def get_bmfc_option(name, ext):
         if '=' in line:
             elems = line.split('=')
             if len(elems) == 2:
-                if elems[1].isdigit():
+                if check_int(elems[1]):
                     bmfc_option[elems[0]] = int(elems[1])
                 else:
                     bmfc_option[elems[0]] = elems[1]
@@ -277,7 +284,7 @@ def outglow_bmfont(name, ext, bmfc_option):
 def generate_fonts():
     files = os.listdir("./bmfc")
     for file in files:
-        file_name, file_ext = os.path.splitext(file);
+        file_name, file_ext = os.path.splitext(file)
         if file_ext == ".bmfc":
             generate_bmfont(file_name, file_ext, "ingame_source.txt");
         if file_ext == "._bmfc":
@@ -296,7 +303,37 @@ def generate_fonts():
                 if font_name == file_name and font_ext == '.dds':
                     outglow_bmfont(font_name, font_ext, bmfc_option)
 
+def worksheet_to_yml(sheet_name, ws):
+    f = open('./original_yml/' + sheet_name + '.yml', 'w', encoding='utf_8_sig')
+    f.write('l_english:\n')
+    header = {}
+    for idx, row in enumerate(ws.rows):
+        if idx == 0:
+            for jdx, col in enumerate(row):
+                header[col.value] = jdx
+        else:
+            code = ws.cell(row=idx + 1, column=header['코드'] + 1).value
+            text = ws.cell(row=idx + 1, column=header['역어'] + 1).value
+            f.write(' %s "%s"\n' % (code, text))
+    f.close()
+
+
+def spreadsheet_to_yml():
+    print('read spreadsheets...')
+    import openpyxl
+    wb = openpyxl.load_workbook(filename='original.xlsx', data_only=True)
+    sheets = wb.sheetnames
+    for sheet_name in sheets:
+        if '_l_english' in sheet_name:
+            print('Processing ' + sheet_name)
+            ws = wb[sheet_name]
+            worksheet_to_yml(sheet_name, ws)
+    print('done.')
+
 if __name__ == "__main__":
+    if os.path.isfile('original.xlsx'):
+        spreadsheet_to_yml()
+
     # execute only if run as a script
     if len(sys.argv) == 1:
         escape_yml()
