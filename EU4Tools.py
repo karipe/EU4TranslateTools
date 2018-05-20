@@ -86,7 +86,7 @@ def extract_characters(name, text):
             worldmap_characters.add(c)
 
 
-def process_file(name):
+def process_file(name, is_unified=False):
     print('Processing ' + name + '...')
     f = open('./original_yml/' + name + '.yml', "r", encoding='utf_8_sig')
     text = f.read()
@@ -100,14 +100,34 @@ def process_file(name):
     f.write(text)
     f.close()
 
+    if is_unified:
+        if os.path.isfile('./unified_yml/' + name + '.yml'):
+            f = open('./unified_yml/' + name + '.yml', "r", encoding='utf_8_sig')
+            text = f.read()
+            f.close()
+            extract_characters(name, text)
 
-def escape_yml():
-    files = os.listdir("./original_yml")
+            wide_text = text.encode('utf-16-le')
+            escaped_wide_text = convert_wide_text_to_escaped_wide_text(wide_text)
+            text = escaped_wide_text.decode('utf-16-le')
+            f = open('./unified_result_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
+            f.write(text)
+            f.close()
+        else:
+            f = open('./unified_result_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
+            f.write(text)
+            f.close()
+
+def escape_yml(is_unified):
+    if is_unified:
+        files = list(set(os.listdir("./unified_yml") + os.listdir("./original_yml")))
+    else:
+        files = os.listdir("./original_yml")
     for file in files:
         file_name, file_ext = os.path.splitext(file)
 
         if file_ext == ".yml":
-            process_file(file_name)
+            process_file(file_name, is_unified)
 
     # Add default texts
     f = open('./default_source.txt', 'r', encoding='utf_8_sig')
@@ -137,14 +157,47 @@ def generate_bmfont(name, ext, source_file):
     f.close()
     f = open('./fonts/' + name + '.fnt', 'w', encoding='utf_8')
 
-    year_line = ''
-    day_line = ''
+    umlauts = {
+        ' ': '　',
+        '년': [15],
+        '일': [14],
+        'A': 'ÀÁÂÃÄÅ',
+        'C': 'Ç',
+        'E': 'ÈÉÊË',
+        'I': 'ÌÍÎÏ',
+        'N': 'Ñ',
+        'O': 'ÒÓÔÕÖ',
+        'U': 'ÙÚÛÜ',
+        'Y': 'ÝŸ',
+        'S': 'Š',
+        'Z': 'Ž',
+        'a': 'àáâãäå',
+        'c': 'ç',
+        'e': 'èéêë',
+        'i': 'ìíîï',
+        'n': 'ñ',
+        'o': 'òóôõö',
+        'u': 'ùúûü',
+        'y': 'ýÿ',
+        's': 'š',
+        'z': 'ž'
+    }
+
+    char_id_re = re.compile('id=([0-9]*)')
+    add_lines = []
     for line in lines:
         line = line.strip()
-        if 'id=24180' in line or 'id=45380' in line:  # 년
-            year_line = line.replace('id=45380', 'id=15').replace('id=24180', 'id=15')
-        if 'id=26085' in line or 'id=51068' in line:  # 일
-            day_line = line.replace('id=51068', 'id=14').replace('id=26085', 'id=14')
+        m = char_id_re.search(line)
+        if m:
+            original_id = int(m.group(1))
+            if chr(original_id) in umlauts:
+                for char in umlauts[chr(original_id)]:
+                    if type(char) == str:
+                        char = ord(char)
+                    add_lines.append(
+                        line.replace('id=' + str(original_id), 'id=' + str(char))
+                    )
+    lines += add_lines
 
     bmfc_option = get_bmfc_option(name, ext)
     yoffset_modifier = bmfc_option.get('yOffset', 0)
@@ -156,10 +209,7 @@ def generate_bmfont(name, ext, source_file):
         if 'chars count=' in line:
             write_mode = True
             chars_count = int(line.split('=')[1])
-            if day_line:
-                chars_count += 1
-            if year_line:
-                chars_count += 1
+            chars_count += len(add_lines)
             line = 'chars count=' + str(chars_count)
 
         m = yoffset_re.search(line)
@@ -167,13 +217,15 @@ def generate_bmfont(name, ext, source_file):
             original_offset = int(m.group(1))
             line = line.replace('yoffset=' + str(original_offset), 'yoffset=' + str(original_offset + yoffset_modifier))
 
+        '''
+        if ext == '._bmfc' and 'char id' in line:
+            tokens = line.split(' ')
+            char_id = int(tokens[1].split('=')[1])
+            if char_id < 128:
+                line = "char id=%d x=1  y=1  width=2    height=2    xoffset=1    yoffset=1    xadvance=1    page=0  chnl=15" % char_id
+        '''
         f.write(line + '\n')
-        if write_mode:
-            if day_line:
-                f.write(day_line + '\n')
-            if year_line:
-                f.write(year_line + '\n')
-            write_mode = False
+
     f.close()
 
 def check_int(s):
@@ -303,18 +355,48 @@ def generate_fonts():
                 if font_name == file_name and font_ext == '.dds':
                     outglow_bmfont(font_name, font_ext, bmfc_option)
 
+global_translated = {}
+
 def worksheet_to_yml(sheet_name, ws):
-    f = open('./original_yml/' + sheet_name + '.yml', 'w', encoding='utf_8_sig')
-    f.write('l_english:\n')
     header = {}
+    translateds = {}
+    origs = {}
     for idx, row in enumerate(ws.rows):
         if idx == 0:
             for jdx, col in enumerate(row):
                 header[col.value] = jdx
         else:
             code = ws.cell(row=idx + 1, column=header['코드'] + 1).value
+            orig = ws.cell(row=idx + 1, column=header['원문'] + 1).value
             text = ws.cell(row=idx + 1, column=header['역어'] + 1).value
-            f.write(' %s "%s"\n' % (code, text))
+            if code is None or orig is None or text is None:
+                continue
+            text = text.replace(' ', '　')
+            '''
+            if orig in global_translated and text != global_translated[orig] and text == orig:
+                print("%s> %s(%s) => %s" % (sheet_name, orig, text, global_translated[orig]))
+            elif orig != text:
+                global_translated[orig] = text
+            '''
+            translateds[code] = text
+            extract_characters(None, text)
+            origs[code] = orig
+
+    f = open('./original_yml/' + sheet_name + '.yml', 'r', encoding='utf_8_sig')
+    lines = f.readlines()
+    f.close()
+
+    f = open('./unified_yml/' + sheet_name + '.yml', 'w', encoding='utf_8_sig')
+    for line in lines:
+        line = line.strip()
+        tokens = line.split(' ', 1)
+        if len(tokens) == 1:
+            f.write(line + '\n')
+        else:
+            tokens[1] = tokens[1][1:-1]
+            text = translateds.get(tokens[0], tokens[1])
+            orig = origs.get(tokens[0], tokens[1])
+            f.write(' %s "%s"\n' % (tokens[0], text))
     f.close()
 
 
@@ -331,15 +413,22 @@ def spreadsheet_to_yml():
     print('done.')
 
 if __name__ == "__main__":
-    if os.path.isfile('original.xlsx'):
-        spreadsheet_to_yml()
-
     # execute only if run as a script
     if len(sys.argv) == 1:
-        escape_yml()
+        is_unified = False
+        if os.path.isfile('original.xlsx'):
+            spreadsheet_to_yml()
+            is_unified = True
+
+        escape_yml(is_unified)
         generate_fonts()
     elif sys.argv[1] == '-y':
-        escape_yml()
+        is_unified = False
+        if os.path.isfile('original.xlsx'):
+            spreadsheet_to_yml()
+            is_unified = True
+
+        escape_yml(is_unified)
     elif sys.argv[1] == '-f':
         generate_fonts()
     else:
