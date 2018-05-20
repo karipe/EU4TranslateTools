@@ -113,8 +113,10 @@ original.xlsx
 *.tga
 *.fnt
 *.yml
+*.zip
 
 # etc
 et_xmlfile/*
 openpyxl/*
 jdcal.py
+EU4TranslateTools/*
