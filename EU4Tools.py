@@ -602,13 +602,13 @@ def migrate_pofile(fn):
     parsed_podata = parse_podata(data)
 
     f = open('./original/yml/%s.yml' % fn, 'r', encoding='utf_8_sig')
-    lines = f.read()
+    lines = f.readlines()
     f.close()
 
     f = open('./original/yml/%s.yml' % fn, 'w', encoding='utf_8_sig')
     for line in lines:
         line = line.strip()
-        tokens = line.split(' ')
+        tokens = line.split(' ', 1)
         if len(tokens) != 2:
             f.write(line + '\n')
         else:
@@ -627,6 +627,8 @@ def migrate_pofiles():
             migrate_pofile(fn)
 
 if __name__ == "__main__":
+    migrate_pofiles()
+    exit()
     # execute only if run as a script
     if len(sys.argv) == 1:
         is_unified = False
