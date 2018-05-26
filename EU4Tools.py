@@ -620,6 +620,7 @@ def migrate_pofile(fn):
     f.close()
 
 def migrate_pofiles():
+    print('migrate pofiles...')
     files = os.listdir('./original/pofiles/')
     for filename in files:
         fn, ext = os.path.splitext(filename)
@@ -627,8 +628,6 @@ def migrate_pofiles():
             migrate_pofile(fn)
 
 if __name__ == "__main__":
-    migrate_pofiles()
-    exit()
     # execute only if run as a script
     if len(sys.argv) == 1:
         is_unified = False
