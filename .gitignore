@@ -114,6 +114,9 @@ original.xlsx
 *.fnt
 *.yml
 *.zip
+original/**/*.txt
+result/*
+unified/*
 
 # etc
 et_xmlfile/*

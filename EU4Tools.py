@@ -5,6 +5,7 @@ import os.path
 import subprocess
 import sys
 import re
+import unicodedata
 
 cp_map = {
     0x80: 0x20AC,
@@ -47,6 +48,9 @@ def cp1252_to_ucs2(cp):
     return result
 
 
+errornous_characters = set()
+
+
 def convert_wide_text_to_escaped_wide_text(wide_text):
     result = bytearray()
     special_chars = [0xA4, 0xA3, 0xA7, 0x24, 0x5B, 0x00, 0x5C, 0x20, 0x0D, 0x0A,
@@ -60,9 +64,13 @@ def convert_wide_text_to_escaped_wide_text(wide_text):
             continue
 
         if high in special_chars:
+            if high == 0x20:
+                errornous_characters.add(wide_text[i:i+2].decode('utf-16-le'))
             escape_char += 2
             high -= 9
         if low in special_chars:
+            if low == 0x20:
+                errornous_characters.add(wide_text[i:i+2].decode('utf-16-le'))
             escape_char += 1
             low += 15
 
@@ -71,11 +79,18 @@ def convert_wide_text_to_escaped_wide_text(wide_text):
     return result
 
 
+def test(src):
+    return convert_wide_text_to_escaped_wide_text(src.encode('utf-16-le'))
+
+
 characters = set()
 worldmap_characters = set()
 
+FULL2HALF = dict((i + 0xFEE0, i) for i in range(0x21, 0x7F))
+FULL2HALF[0x3000] = 0x20
 
 def extract_characters(name, text):
+    text = str(text).translate(FULL2HALF)
     for c in text:
         if c == '\n':
             continue
@@ -88,7 +103,7 @@ def extract_characters(name, text):
 
 def process_file(name, is_unified=False):
     print('Processing ' + name + '...')
-    f = open('./original_yml/' + name + '.yml', "r", encoding='utf_8_sig')
+    f = open('./original/yml/' + name + '.yml', "r", encoding='utf_8_sig')
     text = f.read()
     f.close()
     extract_characters(name, text)
@@ -96,13 +111,14 @@ def process_file(name, is_unified=False):
     wide_text = text.encode('utf-16-le')
     escaped_wide_text = convert_wide_text_to_escaped_wide_text(wide_text)
     text = escaped_wide_text.decode('utf-16-le')
-    f = open('./result_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
+    os.makedirs('result/original_yml', exist_ok=True)
+    f = open('./result/original_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
     f.write(text)
     f.close()
 
     if is_unified:
-        if os.path.isfile('./unified_yml/' + name + '.yml'):
-            f = open('./unified_yml/' + name + '.yml', "r", encoding='utf_8_sig')
+        if os.path.isfile('./unified/yml/' + name + '.yml'):
+            f = open('./unified/yml/' + name + '.yml', "r", encoding='utf_8_sig')
             text = f.read()
             f.close()
             extract_characters(name, text)
@@ -110,19 +126,21 @@ def process_file(name, is_unified=False):
             wide_text = text.encode('utf-16-le')
             escaped_wide_text = convert_wide_text_to_escaped_wide_text(wide_text)
             text = escaped_wide_text.decode('utf-16-le')
-            f = open('./unified_result_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
+            os.makedirs('result/unified_yml', exist_ok=True)
+            f = open('./result/unified_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
             f.write(text)
             f.close()
         else:
-            f = open('./unified_result_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
+            os.makedirs('result/unified_yml', exist_ok=True)
+            f = open('./result/unified_yml/' + name + '.yml', 'w', encoding='utf_8_sig')
             f.write(text)
             f.close()
 
 def escape_yml(is_unified):
     if is_unified:
-        files = list(set(os.listdir("./unified_yml") + os.listdir("./original_yml")))
+        files = list(set(os.listdir("./unified/yml") + os.listdir("./original/yml")))
     else:
-        files = os.listdir("./original_yml")
+        files = os.listdir("./original/yml")
     for file in files:
         file_name, file_ext = os.path.splitext(file)
 
@@ -142,46 +160,111 @@ def escape_yml(is_unified):
     f.write(''.join(sorted(list(worldmap_characters))))
     f.close()
 
+def escape_txt(is_unified):
+    if is_unified:
+        for category in os.listdir('./unified/txt'):
+            if os.path.isdir('./unified/txt/%s' % category):
+                for filename in os.listdir('./unified/txt/%s' % category):
+                    f = open('./unified/txt/%s/%s' % (category, filename), 'r', encoding='utf-8-sig')
+                    text = f.read()
+                    extract_characters('txt', text)
+                    f.close()
+                    wide_text = text.encode('utf-16-le')
+                    escaped_wide_text = convert_wide_text_to_escaped_wide_text(wide_text)
+                    text = escaped_wide_text.decode('utf-16-le')
+
+                    os.makedirs('result/txt/%s' % (category), exist_ok=True)
+                    f = open('./result/txt/%s/%s' % (category, filename), 'w', encoding='utf-8-sig')
+                    f.write(text)
+                    f.close()
+
+
 
 def generate_bmfont(name, ext, source_file):
+    os.makedirs('result/fonts', exist_ok=True)
     cmd_list = [
         'bmfont64.exe',
-        '-c',"./bmfc/" + name + ext,
-        '-o',"./fonts/" + name + ".fnt",
+        '-c',"./original/bmfc/" + name + ext,
+        '-o',"./result/fonts/" + name + ".fnt",
         '-t',source_file
     ]
 
     subprocess.call(' '.join(cmd_list))
-    f = open('./fonts/' + name + '.fnt', 'r', encoding='utf_8')
+    f = open('./result/fonts/' + name + '.fnt', 'r', encoding='utf_8')
     lines = f.readlines()
     f.close()
-    f = open('./fonts/' + name + '.fnt', 'w', encoding='utf_8')
+    f = open('./result/fonts/' + name + '.fnt', 'w', encoding='utf_8')
 
-    umlauts = {
-        ' ': '　',
-        '년': [15],
-        '일': [14],
-        'A': 'ÀÁÂÃÄÅ',
-        'C': 'Ç',
-        'E': 'ÈÉÊË',
-        'I': 'ÌÍÎÏ',
-        'N': 'Ñ',
-        'O': 'ÒÓÔÕÖ',
-        'U': 'ÙÚÛÜ',
-        'Y': 'ÝŸ',
-        'S': 'Š',
-        'Z': 'Ž',
-        'a': 'àáâãäå',
-        'c': 'ç',
-        'e': 'èéêë',
-        'i': 'ìíîï',
-        'n': 'ñ',
-        'o': 'òóôõö',
-        'u': 'ùúûü',
-        'y': 'ýÿ',
-        's': 'š',
-        'z': 'ž'
-    }
+    if ext == '.bmfc':
+        umlauts = {
+            # 오류 우회
+            '선': 'ퟴ',
+            '휠': 'ퟵ',
+            '젠': 'ퟶ',
+            '츠': 'ퟷ',
+            '유': 'ퟸ',
+            '퀠': 'ퟹ',
+            '술': 'ퟺ',
+            '갠': 'ퟻ',
+            ' ': '　',
+
+            '년': [15],
+            '일': [14],
+
+            'A': 'ÀÁÂÃÄÅ',
+            'C': 'Ç',
+            'E': 'ÈÉÊË',
+            'I': 'ÌÍÎÏ',
+            'N': 'Ñ',
+            'O': 'ÒÓÔÕÖ',
+            'U': 'ÙÚÛÜ',
+            'Y': 'ÝŸ',
+            'S': 'Š',
+            'Z': 'Ž',
+            'a': 'àáâãäå',
+            'c': 'ç',
+            'e': 'èéêë',
+            'i': 'ìíîï',
+            'n': 'ñ',
+            'o': 'òóôõö',
+            'u': 'ùúûü',
+            'y': 'ýÿ',
+            's': 'š',
+            'z': 'ž'
+        }
+    else:
+        umlauts = {
+            # 오류 우회
+            '선': 'ퟴ',
+            '휠': 'ퟵ',
+            '젠': 'ퟶ',
+            '츠': 'ퟷ',
+            '유': 'ퟸ',
+            '퀠': 'ퟹ',
+            '술': 'ퟺ',
+            '갠': 'ퟻ',
+            ' ': '　',
+
+            '년': [15],
+            '일': [14],
+
+            'A': 'ÀÁÂÃÄÅàáâãäå',
+            'C': 'Çç',
+            'E': 'ÈÉÊËèéêë',
+            'I': 'ÌÍÎÏìíîï',
+            'N': 'Ññ',
+            'O': 'ÒÓÔÕÖòóôõö',
+            'U': 'ÙÚÛÜùúûü',
+            'Y': 'ÝŸýÿ',
+            'S': 'Šš',
+            'Z': 'Žž'
+        }
+
+    for c in range(0x21, 0x7F):
+        if chr(c) in umlauts:
+            umlauts[chr(c)] += chr(0xFEE0 + c)
+        else:
+            umlauts[chr(c)] = chr(0xFEE0 + c)
 
     char_id_re = re.compile('id=([0-9]*)')
     add_lines = []
@@ -236,7 +319,7 @@ def check_int(s):
     return s.isdigit()
 
 def get_bmfc_option(name, ext):
-    f = open('./bmfc/' + name + ext, 'r', encoding='utf_8')
+    f = open('./original/bmfc/' + name + ext, 'r', encoding='utf_8')
     lines = f.readlines()
 
     bmfc_option = {}
@@ -266,7 +349,7 @@ def generate_dirs(position, width, height, unit):
 
 def outglow_bmfont(name, ext, bmfc_option):
     print('Generating outglow.')
-    f = open('./fonts/' + name + ext, 'rb')
+    f = open('./result/fonts/' + name + ext, 'rb')
     header = f.read(0x80)
     body = f.read()
     f.close()
@@ -327,14 +410,14 @@ def outglow_bmfont(name, ext, bmfc_option):
             result[position + 2] = 0x91
             result[position + 3] = alpha
 
-    f = open('./fonts/' + name + ext, 'wb')
+    f = open('./result/fonts/' + name + ext, 'wb')
     f.write(header)
     f.write(result)
     f.close()
     print('Finished.')
 
 def generate_fonts():
-    files = os.listdir("./bmfc")
+    files = os.listdir("./original/bmfc")
     for file in files:
         file_name, file_ext = os.path.splitext(file)
         if file_ext == ".bmfc":
@@ -349,13 +432,34 @@ def generate_fonts():
                 print('The Auto glow function requires that the invR, invG, and invB options are 1s.')
                 continue
 
-            fonts = os.listdir('./fonts')
+            fonts = os.listdir('./result/fonts')
             for font in fonts:
                 font_name, font_ext = os.path.splitext(font)
                 if font_name == file_name and font_ext == '.dds':
                     outglow_bmfont(font_name, font_ext, bmfc_option)
 
 global_translated = {}
+
+bypass_keywords = {
+    ' ': '　',
+    '선': 'ퟴ',
+    '휠': 'ퟵ',
+    '젠': 'ퟶ',
+    '츠': 'ퟷ',
+    '유': 'ퟸ',
+    '퀠': 'ퟹ',
+    '술': 'ퟺ',
+    '갠': 'ퟻ',
+}
+
+hangul_re = re.compile('[가-힣]')
+
+def bypass_error(src, is_map=False):
+    res = src
+    for key in bypass_keywords:
+        res = res.replace(key, bypass_keywords[key])
+
+    return res
 
 def worksheet_to_yml(sheet_name, ws):
     header = {}
@@ -371,22 +475,23 @@ def worksheet_to_yml(sheet_name, ws):
             text = ws.cell(row=idx + 1, column=header['역어'] + 1).value
             if code is None or orig is None or text is None:
                 continue
-            text = text.replace(' ', '　')
             '''
             if orig in global_translated and text != global_translated[orig] and text == orig:
                 print("%s> %s(%s) => %s" % (sheet_name, orig, text, global_translated[orig]))
             elif orig != text:
                 global_translated[orig] = text
             '''
-            translateds[code] = text
             extract_characters(None, text)
+            text = bypass_error(text, True)
+            translateds[code] = text
             origs[code] = orig
 
-    f = open('./original_yml/' + sheet_name + '.yml', 'r', encoding='utf_8_sig')
+    f = open('./original/yml/' + sheet_name + '.yml', 'r', encoding='utf_8_sig')
     lines = f.readlines()
     f.close()
 
-    f = open('./unified_yml/' + sheet_name + '.yml', 'w', encoding='utf_8_sig')
+    os.makedirs('unified/yml', exist_ok=True)
+    f = open('./unified/yml/' + sheet_name + '.yml', 'w', encoding='utf_8_sig')
     for line in lines:
         line = line.strip()
         tokens = line.split(' ', 1)
@@ -399,17 +504,72 @@ def worksheet_to_yml(sheet_name, ws):
             f.write(' %s "%s"\n' % (tokens[0], text))
     f.close()
 
+def load_text_worksheet(text_translate_data, sheet_name, ws):
+    header = {}
+    for idx, row in enumerate(ws.rows):
+        if idx == 0:
+            for jdx, col in enumerate(row):
+                header[col.value] = jdx
+        else:
+            category = ws.cell(row=idx + 1, column=header['분류'] + 1).value
+            filename = ws.cell(row=idx + 1, column=header['파일명'] + 1).value
+            orig = ws.cell(row=idx + 1, column=header['원문'] + 1).value
+            text = ws.cell(row=idx + 1, column=header['역어'] + 1).value
+            if category is None or filename is None or orig is None or text is None or orig == text:
+                continue
+            '''
+            if orig in global_translated and text != global_translated[orig] and text == orig:
+                print("%s> %s(%s) => %s" % (sheet_name, orig, text, global_translated[orig]))
+            elif orig != text:
+                global_translated[orig] = text
+            '''
+            extract_characters(None, text)
+            text = bypass_error(text, True)
+            if category not in text_translate_data:
+                text_translate_data[category] = {}
+            if filename not in text_translate_data[category]:
+                text_translate_data[category][filename] = {}
+            text_translate_data[category][filename][orig] = text
 
-def spreadsheet_to_yml():
+def unify_text_data(text_translate_data):
+    filenames = set()
+    for category in text_translate_data:
+        if os.path.isdir('original/txt/%s' % category):
+            for filename in text_translate_data[category]:
+                if os.path.isfile('original/txt/%s/%s.txt' % (category, filename)):
+                    filenames.add((category, filename))
+
+    for (category, filename) in filenames:
+        f = open('original/txt/%s/%s.txt' % (category, filename), 'r', encoding='ISO-8859-1')
+        data = f.read()
+        f.close()
+
+        os.makedirs('unified/txt/%s' % (category), exist_ok=True)
+        f = open('unified/txt/%s/%s.txt' % (category, filename), 'w', encoding='utf-8-sig')
+        for key in text_translate_data[category][filename]:
+            value = text_translate_data[category][filename][key]
+            data = data.replace('"%s"' % key, '"%s"' % value)
+        f.write(data)
+        f.close()
+
+
+def spreadsheet_to_data():
     print('read spreadsheets...')
     import openpyxl
     wb = openpyxl.load_workbook(filename='original.xlsx', data_only=True)
     sheets = wb.sheetnames
+    text_translate_data = {}
     for sheet_name in sheets:
         if '_l_english' in sheet_name:
             print('Processing ' + sheet_name)
             ws = wb[sheet_name]
             worksheet_to_yml(sheet_name, ws)
+        if '_txt' in sheet_name:
+            print('Processing ' + sheet_name)
+            ws = wb[sheet_name]
+            load_text_worksheet(text_translate_data, sheet_name, ws)
+    print('processing text datas...')
+    unify_text_data(text_translate_data)
     print('done.')
 
 if __name__ == "__main__":
@@ -417,19 +577,30 @@ if __name__ == "__main__":
     if len(sys.argv) == 1:
         is_unified = False
         if os.path.isfile('original.xlsx'):
-            spreadsheet_to_yml()
+            spreadsheet_to_data()
             is_unified = True
 
         escape_yml(is_unified)
+        escape_txt(is_unified)
         generate_fonts()
+    elif sys.argv[1] == '-u':
+        is_unified = False
+        if os.path.isfile('original.xlsx'):
+            spreadsheet_to_data()
+            is_unified = True
     elif sys.argv[1] == '-y':
         is_unified = False
         if os.path.isfile('original.xlsx'):
-            spreadsheet_to_yml()
+            spreadsheet_to_data()
             is_unified = True
 
         escape_yml(is_unified)
+        escape_txt(is_unified)
     elif sys.argv[1] == '-f':
         generate_fonts()
+    elif sys.argv[1] == '-n':
+        pass
     else:
         print('Usage: (EU4Tools.py | EU4Tools.py -y | EU4Tools.py -f)')
+
+# print(''.join(list(errornous_characters)))
