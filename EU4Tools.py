@@ -572,10 +572,66 @@ def spreadsheet_to_data():
     unify_text_data(text_translate_data)
     print('done.')
 
+def parse_podata(data):
+    result = {}
+    data = data.replace('"\n"', '')
+    lines = data.split('\n')
+    key = None
+    msgctxt_re = re.compile('msgctxt "(.*)"')
+    msgstr_re = re.compile('msgstr "(.*)"')
+
+    for line in lines:
+        line = line.strip()
+        if 'msgctxt' in line:
+            m = msgctxt_re.match(line)
+            if m:
+                key = m.group(1).replace('코', ':')
+        if 'msgstr' in line:
+            m = msgstr_re.match(line)
+            if m and key is not None:
+                result[key] = m.group(1)
+                key = None
+    return result
+
+
+def migrate_pofile(fn):
+    f = open('./original/pofiles/%s.po' % fn, 'r', encoding='utf_8_sig')
+    data = f.read()
+    f.close()
+
+    parsed_podata = parse_podata(data)
+
+    f = open('./original/yml/%s.yml' % fn, 'r', encoding='utf_8_sig')
+    lines = f.read()
+    f.close()
+
+    f = open('./original/yml/%s.yml' % fn, 'w', encoding='utf_8_sig')
+    for line in lines:
+        line = line.strip()
+        tokens = line.split(' ')
+        if len(tokens) != 2:
+            f.write(line + '\n')
+        else:
+            key, value = tokens
+            if key in parsed_podata:
+                f.write(' %s "%s"\n' % (key, parsed_podata[key]))
+            else:
+                f.write(' %s\n' % line)
+    f.close()
+
+def migrate_pofiles():
+    files = os.listdir('./original/pofiles/')
+    for filename in files:
+        fn, ext = os.path.splitext(filename)
+        if ext == '.po':
+            migrate_pofile(fn)
+
 if __name__ == "__main__":
     # execute only if run as a script
     if len(sys.argv) == 1:
         is_unified = False
+        if os.path.isdir('./original/pofiles/'):
+            migrate_pofiles()
         if os.path.isfile('original.xlsx'):
             spreadsheet_to_data()
             is_unified = True
@@ -585,6 +641,8 @@ if __name__ == "__main__":
         generate_fonts()
     elif sys.argv[1] == '-u':
         is_unified = False
+        if os.path.isdir('./original/pofiles/'):
+            migrate_pofiles()
         if os.path.isfile('original.xlsx'):
             spreadsheet_to_data()
             is_unified = True
