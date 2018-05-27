@@ -64,17 +64,38 @@ def convert_wide_text_to_escaped_wide_text(wide_text):
             continue
 
         if high in special_chars:
-            if high == 0x20:
-                errornous_characters.add(wide_text[i:i+2].decode('utf-16-le'))
             escape_char += 2
             high -= 9
         if low in special_chars:
-            if low == 0x20:
-                errornous_characters.add(wide_text[i:i+2].decode('utf-16-le'))
+            escape_char += 1
+            low += 15
+        if high == 0x40 or low == 0x40:
+            errornous_characters.add(wide_text[i:i + 2].decode('utf-16-le'))
+
+        result.extend(escape_char.to_bytes(2, byteorder='little') + cp1252_to_ucs2(low) + cp1252_to_ucs2(high))
+
+    return result
+
+def convert_wide_text_to_escaped_text(wide_text):
+    result = bytearray()
+    special_chars = [0xA4, 0xA3, 0xA7, 0x24, 0x5B, 0x00, 0x5C, 0x20, 0x0D, 0x0A,
+                     0x22, 0x7B, 0x7D, 0x40, 0x80, 0x7E, 0xBD]
+    for i in range(0, len(wide_text), 2):
+        escape_char = 0x10
+        high = wide_text[i + 1]
+        low = wide_text[i]
+        if high == 0:
+            result += bytes([low])
+            continue
+
+        if high in special_chars:
+            escape_char += 2
+            high -= 9
+        if low in special_chars:
             escape_char += 1
             low += 15
 
-        result.extend(escape_char.to_bytes(2, byteorder='little') + cp1252_to_ucs2(low) + cp1252_to_ucs2(high))
+        result.extend(escape_char.to_bytes(1, byteorder='little') + low.to_bytes(1, byteorder='little') + high.to_bytes(1, byteorder='little'))
 
     return result
 
@@ -162,11 +183,37 @@ def escape_yml(is_unified):
 
 def escape_txt(is_unified):
     if is_unified:
+        processed_files = set()
         for category in os.listdir('./unified/txt'):
             if os.path.isdir('./unified/txt/%s' % category):
                 for filename in os.listdir('./unified/txt/%s' % category):
+                    processed_files.add((category, filename))
                     f = open('./unified/txt/%s/%s' % (category, filename), 'r', encoding='utf-8-sig')
                     text = f.read()
+                    extract_characters('txt', text)
+                    f.close()
+                    wide_text = text.encode('utf-16-le')
+                    text = convert_wide_text_to_escaped_text(wide_text)
+
+                    os.makedirs('result/txt/%s' % (category), exist_ok=True)
+                    f = open('./result/txt/%s/%s' % (category, filename), 'wb')
+                    f.write(text)
+                    f.close()
+
+        for category in os.listdir('./original/txt'):
+            if os.path.isdir('./original/txt/%s' % category):
+                for filename in os.listdir('./original/txt/%s' % category):
+                    if (category, filename) in processed_files:
+                        continue
+
+                    try:
+                        f = open('./original/txt/%s/%s' % (category, filename), 'r', encoding='utf-8-sig')
+                        text = f.read()
+                        print(category, filename, 'utf-8-sig')
+                    except UnicodeDecodeError as e:
+                        f = open('./original/txt/%s/%s' % (category, filename), 'r', encoding='ISO-8859-1')
+                        text = f.read()
+                        print(category, filename, 'iso-8859-1')
                     extract_characters('txt', text)
                     f.close()
                     wide_text = text.encode('utf-16-le')
@@ -177,7 +224,26 @@ def escape_txt(is_unified):
                     f = open('./result/txt/%s/%s' % (category, filename), 'w', encoding='utf-8-sig')
                     f.write(text)
                     f.close()
+    else:
+        for category in os.listdir('./original/txt'):
+            if os.path.isdir('./original/txt/%s' % category):
+                for filename in os.listdir('./original/txt/%s' % category):
+                    try:
+                        f = open('./original/txt/%s/%s' % (category, filename), 'r', encoding='utf-8-sig')
+                        text = f.read()
+                    except UnicodeDecodeError as e:
+                        f = open('./original/txt/%s/%s' % (category, filename), 'r', encoding='ISO-8859-1')
+                        text = f.read()
+                    extract_characters('txt', text)
+                    f.close()
+                    wide_text = text.encode('utf-16-le')
+                    escaped_wide_text = convert_wide_text_to_escaped_wide_text(wide_text)
+                    text = escaped_wide_text.decode('utf-16-le')
 
+                    os.makedirs('result/txt/%s' % (category), exist_ok=True)
+                    f = open('./result/txt/%s/%s' % (category, filename), 'w', encoding='utf-8-sig')
+                    f.write(text)
+                    f.close()
 
 
 def generate_bmfont(name, ext, source_file):
@@ -589,7 +655,8 @@ def parse_podata(data):
         if 'msgstr' in line:
             m = msgstr_re.match(line)
             if m and key is not None:
-                result[key] = m.group(1)
+                value = m.group(1)
+                result[key] = value
                 key = None
     return result
 
